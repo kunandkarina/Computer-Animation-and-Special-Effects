@@ -153,41 +153,72 @@ void MotionGraph::computeDistMatrix(int blendWindowSize) {
     }
 }
 
+
+
 void MotionGraph::constructGraph() {
     computeDistMatrix(blendWindowSize);
-    /*
-    for (int a = 0; a < numNodes; a++) {
-        for (int b = 0; b < numNodes; b++) {
-            std::cout << distMatrix[a][b] << " ";
-        }
-        std::cout << std::endl;
-    }
-    */
+
+        
+    //for (int a = 0; a < numNodes; a++) {
+    //    for (int b = 0; b < numNodes; b++) {
+    //        std::cout << distMatrix[a][b] << " ";
+    //    }
+    //    std::cout << std::endl;
+    //}
+        
     m_graph.clear();
     for (int i = 0; i < numNodes; i++) {
-        MotionNode* m = new (MotionNode);
+        MotionNode* m = new MotionNode();
         m_graph.push_back(*m);
     }
 
+    //        // **TODO**
+    //        // Task: For each node in the motion graph, construct the edge using MotionNode::addEdgeTo()
+    //        // Hint: 1. Each node in m_graph represents a motion segment from the original three motion clips.
+    //        //
+    //        //       2. An outgoing edge from m_graph[i] to m_graph[j] can be constructed under two circumstances:
+    //        //              (a) j = i+1, which means these are two consecutive segments from a original motion clip
+    //        //              (b) distMatrix[i][j] < edgeCostThreshold
+    //        //          Circumstance (a) should NOT be applied when m_graph[i] is the final segment of a motion clip.
+    //        //
+    //        //       3. You can freely decide how to distribute the edge weights for each node, as long as it produces
+    //        a reasonable graph.
+    //        //          One way is to give a constant weight to the edge pointing to the node's consecutive segment
+    //        (eg. 0.5),
+    //        //          and for the rest edges, the weight is distributed by the values in distMatrix[i][j], the
+    //        higher the distance, the smaller the weight
+    //        //          Make sure that the sum of weights of all outgoing edges should be 1.0 for every node.
+    //        //
+    //        //       4. It is okay for the nodes which represent the final segment of the motion clips to have zero
+    //        outgoing edges.
+    //        //          You can also prune some existing edges to get a better result.
+
+
+
     for (int i = 0; i < numNodes; i++) {
-        // **TODO**
-        // Task: For each node in the motion graph, construct the edge using MotionNode::addEdgeTo()
-        // Hint: 1. Each node in m_graph represents a motion segment from the original three motion clips.
-        // 
-        //       2. An outgoing edge from m_graph[i] to m_graph[j] can be constructed under two circumstances:
-        //              (a) j = i+1, which means these are two consecutive segments from a original motion clip
-        //              (b) distMatrix[i][j] < edgeCostThreshold
-        //          Circumstance (a) should NOT be applied when m_graph[i] is the final segment of a motion clip.
-        // 
-        //       3. You can freely decide how to distribute the edge weights for each node, as long as it produces a reasonable graph.
-        //          One way is to give a constant weight to the edge pointing to the node's consecutive segment (eg. 0.5),
-        //          and for the rest edges, the weight is distributed by the values in distMatrix[i][j], the higher the distance, the smaller the weight
-        //          Make sure that the sum of weights of all outgoing edges should be 1.0 for every node.
-        // 
-        //       4. It is okay for the nodes which represent the final segment of the motion clips to have zero outgoing edges.
-        //          You can also prune some existing edges to get a better result.
+        for (int j = 0; j < numNodes; j++) {
+            if (j == i + 1 && i != numNodes - 1) {
+                m_graph[i].addEdgeTo(j, 5.0/(distMatrix[i][j]));
+                //m_graph[i].addEdgeTo(j, 0.1);
+            } else if (distMatrix[i][j] < edgeCostThreshold) {
+                double edgeweight = 1.0 / (distMatrix[i][j]);
+                m_graph[i].addEdgeTo(j, edgeweight);
+            }
+        }
+
+        // Normalize the weights so that the sum of outgoing edges is 1.0
+        double totalWeight = 0.0;
+        for (int k = 0; k < m_graph[i].num_edges; k++) {
+            totalWeight += m_graph[i].weight[k];
+        }
+        if (totalWeight > 0.0) {
+            for (int k = 0; k < m_graph[i].num_edges; k++) {
+                m_graph[i].weight[k] /= totalWeight;
+            }
+        }
     }
 }
+
 
 void MotionGraph::traverse() {
     // srand((int) &current);
@@ -217,15 +248,17 @@ void MotionGraph::traverse() {
     } else {
         printf("rand: %lf, sum: %lf, jump from %d to %d\n", prob, sum, currIdx, nextIdx);
         Posture lastPose = currSegment.getPosture(currSegment.getFrameNum() - blendWindowSize);
-        double faceAng = lastPose.getFacingAngle();
-        segmentList[nextIdx].transform(faceAng, lastPose.bone_translations[0].head<3>());
+        //double faceAng = lastPose.getFacingAngle();
+        //segmentList[nextIdx].transform(faceAng, lastPose.bone_translations[0].head<3>());
+        segmentList[nextIdx].transform(lastPose.bone_rotations[0], lastPose.bone_translations[0]);
         nextSegment = segmentList[nextIdx];
         Motion bm = currSegment.blending(nextSegment, blendWeights, blendWindowSize);
 
         for (int i = nextIdx; isNotInVector(EndSegments, i);) {
             lastPose = segmentList[i].getPosture(segmentList[i].getFrameNum() - 1);
-            faceAng = lastPose.getFacingAngle();
-            segmentList[++i].transform(faceAng, lastPose.bone_translations[0].head<3>());
+            //faceAng = lastPose.getFacingAngle();
+            //segmentList[++i].transform(faceAng, lastPose.bone_translations[0].head<3>());
+            segmentList[++i].transform(lastPose.bone_rotations[0], lastPose.bone_translations[0]);
         }
 
         Motion tempCurr(currSegment);

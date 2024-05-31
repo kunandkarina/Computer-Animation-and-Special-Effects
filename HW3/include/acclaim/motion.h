@@ -53,7 +53,7 @@ class Motion final {
     // render the underlying skeleton
     void render(graphics::Program *Program) const;
 
-    void transform(double newFacing, const Eigen::Vector3d &newPosition);
+    void transform(Eigen::Vector4d &newFacing, const Eigen::Vector4d &newPosition);
     Motion blending(Motion &m2, const std::vector<double> &blendWeight, int blendWindowSize);
 
  private:

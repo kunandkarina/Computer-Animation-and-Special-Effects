@@ -49,6 +49,7 @@ bool isUsingFreeCamera = false;
 bool isMouseBinded = false;
 // Animation Selection
 const char* animations[] = {"walk_fwd_circle.amc", "walk_fwd_curve1.amc", "walk_fwd_curve2.amc"};
+//const char* animations[] = {"walk_side_turn1.amc", "walk_side_turn2.amc", "walk_side_turn3.amc"};
 static char* current_animations[] = {(char*)animations[0], (char*)animations[1], (char*)animations[2]};
 bool changed[] = {false, false, false};
 // Frame Control
@@ -325,7 +326,7 @@ GLFWwindow* initialize() {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     // Create GLFW context
-    GLFWwindow* window = glfwCreateWindow(g_ScreenWidth, g_ScreenHeight, "Inverse Kinematics", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(g_ScreenWidth, g_ScreenHeight, "110550090", nullptr, nullptr);
     if (window == nullptr) {
         std::cerr << "Failed to create OpenGL 4.1 window!" << std::endl;
         return nullptr;

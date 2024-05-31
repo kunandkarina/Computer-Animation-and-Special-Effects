@@ -3,6 +3,8 @@
 #include <iostream>
 #include <utility>
 #include <vector>
+#define _USE_MATH_DEFINES
+#include <math.h>
 
 #include "simulation/kinematics.h"
 #include "util/helper.h"
@@ -80,19 +82,105 @@ void Motion::forwardkinematics(int frame_idx) {
     skeleton->setModelMatrices();
 }
 
-void Motion::transform(double newFacing, const Eigen::Vector3d &newPosition) {
+void Motion::transform(Eigen::Vector4d &newFacing, const Eigen::Vector4d &newPosition) {
     // **TODO**
     // Task: Transform the whole motion segment so that the root bone of the first posture(first frame) 
     //       of the motion is located at newPosition, and its facing be newFacing.
     //       The whole motion segment must remain continuous.
+
+    //1. Get the initial position and orientation of the root bone at frame 0
+    Eigen::Vector4d p = postures[0].bone_translations[0];
+    Eigen::Vector4d r = postures[0].bone_rotations[0];
+
+    // 2. Compute the position difference D
+    Eigen::Vector4d d = newPosition - p;
+
+    // 3. Convert the initial and new facing directions to rotation matrices
+    Eigen::Quaternion initialRotation = util::rotateDegreeZYX(r);
+    Eigen::Quaternion newRotation = util::rotateDegreeZYX(newFacing);
+    Eigen::Matrix3d initialRotationMatrix = initialRotation.toRotationMatrix();
+    Eigen::Matrix3d newRotationMatrix = newRotation.toRotationMatrix();
+
+     // 4. Extract the unit vectors for the initial and new facing directions
+    Eigen::Vector3d initialDirection = initialRotationMatrix.row(2);
+    Eigen::Vector3d newDirection = newRotationMatrix.row(2);
+
+    // 5. Compute the angle theta_y for the y-axis rotation
+    double theta_y = atan2(newDirection.z(), newDirection.x()) - atan2(initialDirection.z(), initialDirection.x());
+
+    // 6. Compute the rotation matrix R for the y-axis rotation manually
+    Eigen::Matrix3d R = Eigen::AngleAxisd(theta_y, Eigen::Vector3d::UnitY()).toRotationMatrix();
+
+    // 7. Traverse through each posture and update its root bone position and rotation
+    for (Posture &posture : postures) {
+        Eigen::Vector4d current_pos = posture.bone_translations[0];
+        Eigen::Vector4d current_rot = posture.bone_rotations[0];
+        
+        Eigen::Quaternion current_rotation_quaternion = util::rotateDegreeZYX(current_rot);
+        Eigen::Matrix3d current_rotation_matrix = current_rotation_quaternion.toRotationMatrix();
+        Eigen::Matrix3d updated_rotation_matrix = R * current_rotation_matrix;
+        Eigen::Vector3d updated_euler_angles = updated_rotation_matrix.eulerAngles(2, 1, 0).reverse();
+        Eigen::Vector3d updated_rotation_degrees = updated_euler_angles * (180.0 / M_PI);
+        posture.bone_rotations[0].head<3>() = updated_rotation_degrees;
+
+        Eigen::Vector3d p_diff = (current_pos.head<3>() - p.head<3>());
+        Eigen::Vector3d p_rotate = R * p_diff;
+        Eigen::Vector3d Position = p_rotate + p.head<3>() + d.head<3>();
+        posture.bone_translations[0].head<3>() = Position;
+    }
 }
 
 Motion blend(Motion bm1, Motion bm2, const std::vector<double> &weight) {
     // **TODO**
-    // Task: Return a motion segment that blends bm1 and bm2.  
+    // Task: Return a motion segment that blends bm1 and bm2.
     //       bm1: tail of m1, bm2: head of m2
     //       You can assume that m2's root position and orientation is aleady aligned with m1 before blending.
-    //       In other words, m2.transform(...) will be called before m1.blending(m2, blendWeight, blendWindowSize) is called
+    //       In other words, m2.transform(...) will be called before m1.blending(m2, blendWeight, blendWindowSize) is
+    //       called
+
+    /// bm1, bm2 = 50
+    int blendWindowsSize = bm1.getFrameNum();
+    //int blendWindowsSize = 30;
+    Motion blendMotion = bm1;
+    //std::cout << "---------------WindowSize--------------\n";
+    //std::cout << blendWindowsSize << "\n";
+    //std::cout << "---------------WindowSize--------------\n";
+    //for (int i = 0; i < weight.size(); i++) {
+    //    std::cout << weight[i] << " ";
+    //}
+    //std::cout << "\n";
+
+
+    for (int i = 0; i < blendWindowsSize; i++) {
+        acclaim::Posture pos1 = bm1.getPosture(i);
+        acclaim::Posture pos2 = bm2.getPosture(i);
+        double w = weight[i];
+        double ease_in_ease_out;
+        //double ease_in_ease_out = (1 / 2) * sin((i / (blendWindowsSize - 1)) * M_PI - (M_PI / 2));
+        Posture blendPosture(pos1.bone_rotations.size());
+        for (size_t j = 0; j < pos1.bone_translations.size(); j++) {
+            if (w < 0.5) {
+                ease_in_ease_out = 2 * w * w;
+            } else {
+                ease_in_ease_out = -2 * w * w + 4 * w - 1;
+            }
+            blendPosture.bone_translations[j] = pos1.bone_translations[j] * (1 - ease_in_ease_out) + pos2.bone_translations[j] * ease_in_ease_out;
+
+            // Interpolate bone rotations using SLERP
+            for (size_t j = 0; j < pos1.bone_rotations.size(); j++) {
+                Eigen::Quaternion r1 = util::rotateDegreeZYX(pos1.bone_rotations[j]);
+                Eigen::Quaternion r2 = util::rotateDegreeZYX(pos2.bone_rotations[j]);
+                Eigen::Quaternion r_interpolated = r1.slerp(ease_in_ease_out, r2);
+                // Convert quaternion to Euler angles in XYZ order
+                Eigen::Vector3d eulerAnglesXYZ = r_interpolated.toRotationMatrix().eulerAngles(2, 1,0).reverse();
+                Eigen::Vector3d eulerAnglesXYZDeg = eulerAnglesXYZ * (180.0 / M_PI);
+                blendPosture.bone_rotations[j].head<3>() = eulerAnglesXYZDeg;
+            }
+        }
+        blendMotion.setPosture(i, blendPosture);
+    }
+
+    return blendMotion;
 }
 
 Motion Motion::blending(Motion &m2, const std::vector<double> &blendWeight, int blendWindowSize) {
